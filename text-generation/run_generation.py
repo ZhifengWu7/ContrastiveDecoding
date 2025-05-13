@@ -16,6 +16,7 @@
 # limitations under the License.
 """ Conditional text generation with the auto-regressive models of the library (GPT/GPT-2/CTRL/Transformer-XL/XLNet)
 """
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
 
 
 import argparse
@@ -27,6 +28,10 @@ from tqdm import tqdm
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 import json 
 from collections import Counter 
+import os
+import warnings
+
+warnings.filterwarnings('ignore')
 
 from transformers import (
     CTRLLMHeadModel,
@@ -363,6 +368,9 @@ def adjust_length_to_model(length, max_sequence_length):
 
 
 def out_file(outfile_path, generation_lst):
+    directory = os.path.dirname(outfile_path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
     with open(outfile_path, 'w') as f:
         for kk in generation_lst:
             print(json.dumps(kk), file=f) 
@@ -1043,18 +1051,18 @@ if __name__ == "__main__":
     # with torch.cuda.amp.autocast():
     main(args) 
 
-    import submitit, copy 
-    jobs = []
-    log_folder = "log_test/%j"
-    executor = submitit.AutoExecutor(folder=log_folder)
+    # import submitit, copy 
+    # jobs = []
+    # log_folder = "log_test/%j"
+    # executor = submitit.AutoExecutor(folder=log_folder)
     
+    # # executor.update_parameters(timeout_min=1440, slurm_partition="devlab", gpus_per_node=1, 
+    # #                             cpus_per_task=10, constraint='volta32gb')
     # executor.update_parameters(timeout_min=1440, slurm_partition="devlab", gpus_per_node=1, 
     #                             cpus_per_task=10, constraint='volta32gb')
-    executor.update_parameters(timeout_min=1440, slurm_partition="devlab", gpus_per_node=1, 
-                                cpus_per_task=10, constraint='volta32gb')
 
-    with executor.batch():
-        job = executor.submit(main, args) 
-        jobs.append(job)
+    # with executor.batch():
+    #     job = executor.submit(main, args) 
+    #     jobs.append(job)
 
     

@@ -1,0 +1,30 @@
+# Python编译文件
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+
+# transformers目录中的编译文件（如果您想保留transformers库）
+transformers/**/__pycache__/
+transformers/**/*.py[cod]
+
+# 或者完全忽略transformers目录（如果您不想跟踪它）
+# transformers/
+
+# 输出目录
+text-generation/outputs/
+text-generation/outputs_*/
+**/*.json
+
+# 虚拟环境
+**/venv/
+**/ENV/
+**/env/
+venv/
+ENV/
+env/
+constrastive_decoding/
+
+# 日志文件
+**/*.log
+**/log_test/
+EOF
