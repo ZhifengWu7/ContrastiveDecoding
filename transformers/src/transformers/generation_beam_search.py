@@ -214,6 +214,7 @@ class BeamSearchScorer(BeamScorer):
         eos_token_id: Optional[int] = None,
         beam_indices: Optional[torch.LongTensor] = None,
     ) -> Tuple[torch.Tensor]:
+    # core logic: choosing num_beams tokens for new beams.
         cur_len = input_ids.shape[-1]
         batch_size = len(self._beam_hyps)
         if not (batch_size == (input_ids.shape[0] // self.group_size)):

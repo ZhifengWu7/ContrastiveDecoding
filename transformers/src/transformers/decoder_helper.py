@@ -20,6 +20,8 @@ def post_process_easy(teacher_distribution, student_distribution, model_kwargs):
 
 def post_process_reweight(  input_ids, next_indices, next_tokens, next_token_scores, student_scores, 
                             model_kwargs, main_model):
+    # core logic: calculate new scores. Note, there is only 2 * num_beams tokens remaining.
+
     # new_input_ids = input_ids[next_indices.squeeze(0)]
     # temp_rollout = torch.cat([new_input_ids, next_tokens.view(new_input_ids.size(0), -1)], dim=-1)
     # preseqlen = temp_rollout.size(1)
@@ -38,7 +40,7 @@ def post_process_reweight(  input_ids, next_indices, next_tokens, next_token_sco
 
     # print(next_token_scores.shape, student_scores.shape, )
 
-
+    # core logic of constrastive decoding
     next_token_scores = next_token_scores - model_kwargs['st_coef'] * student_scores
 
     # print(next_token_scores) # analysis 

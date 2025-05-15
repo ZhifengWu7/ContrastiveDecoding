@@ -17,7 +17,12 @@
 """ Conditional text generation with the auto-regressive models of the library (GPT/GPT-2/CTRL/Transformer-XL/XLNet)
 """
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
-
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> what is machine learning?" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
+# for core logic, first look at transformers/src/transformers/generation_utils.py,
+#                 it calls two important functions, 
+#                 one is from transformers/src/transformers/decoder_helper.py,
+#                 the other is from transformers/src/transformers/generation_beam_search.py
+# if not sure which specific function should dive into, just search for "core logic"
 
 import argparse
 import logging
@@ -29,7 +34,7 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 import json 
 from collections import Counter 
 import os
-import warnings
+import warnings, time
 
 warnings.filterwarnings('ignore')
 
@@ -174,6 +179,9 @@ with people, even a bishop, begging for his blessing. <eod> </s> <eos>"""
 
 
 def set_seed(args):
+    # # use random seed --> useless for beam search
+    # random_seed = int(time.time() * 1000) % 1000000
+    # print(f"current seed: {random_seed}")
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if args.n_gpu > 0:
@@ -393,6 +401,7 @@ def format_out(generated_text, prompt, generated_tokens, gold_ref=None):
             
     return output 
 
+# here is the default command parameters, it should be in the yaml file.
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -519,6 +528,8 @@ def main(args):
     if args.fp16:
         model.half()
     model.to(args.device)
+
+    # load the student model
     if args.contrastive_decoding == 'student':
         assert args.student_name_or_path is not None
         student_lm = AutoModelForCausalLM.from_pretrained(args.student_name_or_path) 
@@ -591,6 +602,7 @@ def main(args):
         args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
     logger.info(args)
 
+    # handling prompt
     if not args.prompt_file:
         prompt_text = args.prompt if args.prompt else input("Model prompt >>> ")
         prompt_lst = [prompt_text]
@@ -746,6 +758,7 @@ def main(args):
 
     generation_lst = []
     
+    # main logic!!! 
     # LISA 
     for iidx, prompt_text in enumerate(prompt_lst[:2000]):
         # Different models need different input formatting and/or extra arguments
@@ -762,7 +775,8 @@ def main(args):
             encoded_prompt = tokenizer.encode(
                 preprocessed_prompt_text, add_special_tokens=False, return_tensors="pt", **tokenizer_kwargs
             )
-        else:
+        else:   
+            # transforms prompt(text version) to encoded_prompt
             prefix = args.prefix if args.prefix else args.padding_text
             encoded_prompt = tokenizer.encode(prefix + prompt_text, add_special_tokens=False, return_tensors="pt")
         encoded_prompt = encoded_prompt.to(args.device)
@@ -772,8 +786,10 @@ def main(args):
         else:
             input_ids = encoded_prompt
 
-        print(len(encoded_prompt[0]), input_ids.shape) 
+        print(len(encoded_prompt[0]), input_ids.shape)
+        # here is the branche we'll go into 
         if args.do_sample == 'no' and (args.contrastive_decoding == 'student' or args.contrastive_decoding == 'earlystop' or args.contrastive_decoding == 'ngram') :
+            # the core of core codes! the output_sequences is our desirable token sequences.
             output_sequences = model.generate(
                 input_ids=input_ids,
                 max_length=args.length + len(encoded_prompt[0]),

@@ -397,7 +397,7 @@ class GenerationMixin:
         - *constrained beam-search decoding* by calling [`~generation_utils.GenerationMixin.constrained_beam_search`],
           if `constraints!=None` or `force_words_ids!=None`.
     """
-
+    
     def _prepare_model_inputs(
         self,
         inputs: Optional[torch.Tensor] = None,
@@ -2510,6 +2510,7 @@ class GenerationMixin:
                 #       )
                 # if first_marker:
                 #     model_inputs_student['decoder_input_ids'] = torch.cat([model_inputs_student['decoder_input_ids'], torch.zeros(model_inputs_student['decoder_input_ids'].shape).long().to(model_inputs_student['decoder_input_ids'].device)], dim=-1)
+                # shape of outputs_student: (num_beams, num_input_tokens, vocab_size)
                 outputs_student = model_kwargs['student_lm'](
                     **model_inputs_student,
                     return_dict=True,
@@ -2533,7 +2534,7 @@ class GenerationMixin:
                 next_token_logits_student[next_token_logits_student == ninf] = float('inf')
 
                
-
+            # shape of outputs_student: (num_beams, num_input_tokens, vocab_size)
             outputs = self(
                 **model_inputs,
                 return_dict=True,
@@ -2544,7 +2545,7 @@ class GenerationMixin:
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
                 continue  # don't waste resources running the code we don't need
-
+            # shape of next_token_logits: (num_beams, vocab_size)
             next_token_logits = outputs.logits[:, -1, :]
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2620,11 +2621,11 @@ class GenerationMixin:
                 print(model_kwargs['tokenizer'].batch_decode(next_tokens.view(-1, 1)))
                 print(next_token_scores) 
 
-               
+                
 
 
             elif model_kwargs['teacher_student']:
-
+                # the branch we dive into
                 if model_kwargs['use_cap_student']: 
                     # print(next_token_logits_student.shape, cap_student.shape) 
                     cap_student = cap_student.unsqueeze(1).expand(-1, next_token_logits_student.size(1))
@@ -2644,6 +2645,7 @@ class GenerationMixin:
                 # old version. 
                 if self.config.is_encoder_decoder:
                     next_token_scores_keep = next_token_scores
+                # core logic: we only choose from 2 * num_beams = 10 possible tokens
                 next_token_scores_keep, next_tokens = torch.topk(
                     next_token_scores_keep, 2 * num_beams, dim=1, largest=True, sorted=True
                 )
@@ -2693,6 +2695,7 @@ class GenerationMixin:
             beam_next_tokens = beam_outputs["next_beam_tokens"]
             beam_idx = beam_outputs["next_beam_indices"]
 
+            # extend input_ids using generated num_beams tokens.
             input_ids = torch.cat([input_ids[beam_idx, :], beam_next_tokens.unsqueeze(-1)], dim=-1)
 
             model_kwargs = self._update_model_kwargs_for_generation(
