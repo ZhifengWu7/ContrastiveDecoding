@@ -2649,6 +2649,9 @@ class GenerationMixin:
                 next_token_scores_keep, next_tokens = torch.topk(
                     next_token_scores_keep, 2 * num_beams, dim=1, largest=True, sorted=True
                 )
+                # next_token_scores_keep, next_tokens = torch.topk(
+                #     next_token_scores_keep, 2000 * num_beams, dim=1, largest=True, sorted=True
+                # )
                 # print(next_token_scores_keep, next_tokens)
                 next_tokens_keep = next_tokens.clone()
                 student_scores = torch.gather(next_token_logits_student, -1, next_tokens_keep)

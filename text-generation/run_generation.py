@@ -18,6 +18,17 @@
 """
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> what is machine learning?" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> introduce the environmental impact of AI" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
+
+# # Wikitext数据集
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file wikitext --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/wikitext_gpt2-1.0_xl_256.jsonl --ignore_prefix yes
+
+# # Wikinews数据集
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file /private/home/xlisali/decoding/webscrape/wikinews_text.jsonl --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/wikinews_gpt2-1.0_xl_256.jsonl --ignore_prefix yes
+
+# # Story数据集
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file /private/home/xlisali/decoding/text-generation/bookcorpus/books1/ref_200.jsonl --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/story_gpt2-1.0_xl_256.jsonl --ignore_prefix yes
+
 # for core logic, first look at transformers/src/transformers/generation_utils.py,
 #                 it calls two important functions, 
 #                 one is from transformers/src/transformers/decoder_helper.py,
@@ -34,9 +45,11 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions
 import json 
 from collections import Counter 
 import os
-import warnings, time
+import warnings, time, sys
+from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
+warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set.')
 
 from transformers import (
     CTRLLMHeadModel,
@@ -152,6 +165,7 @@ logger = logging.getLogger(__name__)
 
 MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
 
+# the types of foundation models we supported
 MODEL_CLASSES = {
     "gpt2": (GPT2LMHeadModel, GPT2Tokenizer),
     "opt": (OPTForCausalLM, GPT2Tokenizer),
@@ -760,7 +774,7 @@ def main(args):
     
     # main logic!!! 
     # LISA 
-    for iidx, prompt_text in enumerate(prompt_lst[:2000]):
+    for iidx, prompt_text in enumerate(tqdm(prompt_lst[:2000], desc="Processing Prompts")):
         # Different models need different input formatting and/or extra arguments
         requires_preprocessing = args.model_type in PREPROCESSING_FUNCTIONS.keys()
         if requires_preprocessing:
@@ -1024,8 +1038,9 @@ def main(args):
             model_kwargs_student={}, 
             st_coef=args.st_coef)
             print('sampling')
-
-        print('analysis', output_sequences.shape, 'output.shape', input_ids.shape, 'input_ids.shape')
+        
+        # # we comment it temporaliy
+        # print('analysis', output_sequences.shape, 'output.shape', input_ids.shape, 'input_ids.shape')
         # analysis(model, output_sequences, -1)
         # print(output_sequences)
         # Remove the batch dimension when returning multiple sequences
@@ -1035,7 +1050,8 @@ def main(args):
         generated_sequences = []
 
         for generated_sequence_idx, generated_sequence in enumerate(output_sequences):
-            print(f"=== GENERATED SEQUENCE {generated_sequence_idx + 1} ===")
+            if iidx < 10:
+                print(f"=== GENERATED SEQUENCE {generated_sequence_idx + 1} ===")
             generated_sequence = generated_sequence.tolist()
 
             # Decode text
@@ -1052,7 +1068,8 @@ def main(args):
 
             generated_dict = format_out(total_sequence, prompt_text, generated_sequence, gold_ref=ref_lst[iidx][1])
             generated_sequences.append(generated_dict)
-            print(total_sequence)
+            if iidx < 10:
+                print(total_sequence)
             # print(generated_dict)
 
 
