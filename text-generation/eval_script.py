@@ -1,14 +1,19 @@
+# python text-generation/eval_script.py outputs/wikitext_gpt2-1.0_xl_256.jsonl
+
 # parse the generated results into a list of text
 from dis import disco
 import json, sys, os 
 import numpy as np 
 our_file = sys.argv[1]
 
-rewrite=False  
+rewrite=False
 mauve = True 
-coherence = True 
-ppl=True 
-entity_f1 = True 
+coherence = True
+# modification 2
+# ppl=True
+# entity_f1 = True 
+ppl=False
+entity_f1 = False 
 disco_coh= False  
 
 # rewrite=False 
@@ -29,7 +34,9 @@ if rewrite:
 
 print(our_file)
 cumulative_stats = {}
-sys.path.insert(0, '/private/home/xlisali/decoding/text-generation/baselines/SimCTG')
+# modification 1
+# sys.path.insert(0, '/private/home/xlisali/decoding/text-generation/baselines/SimCTG')
+sys.path.insert(0, './SimCTG')
 def get_2lst_repl(our_file):
     '''/private/home/xlisali/decoding/text-generation/baselines/simctg_contrasive.json'''
     text_list = []
@@ -200,8 +207,14 @@ text_list = load_file_(our_file)
 # compute the evaluation results
 from simctg.evaluation import measure_repetition_and_diversity
 rep_2, rep_3, rep_4, diversity = measure_repetition_and_diversity(text_list)
-print(diversity)
-print ('{} rep-2 is {}, rep-3 is {}, rep-4 is {}, and diversity is {}'.format(our_file, rep_2, rep_3, rep_4, round(diversity,2)))
+# modification 3: for better visualization
+# print(diversity)
+# print ('{} rep-2 is {}, rep-3 is {}, rep-4 is {}, and diversity is {}'.format(our_file, rep_2, rep_3, rep_4, round(diversity,2)))
+print('\n' + '='*50)
+print('EVALUATION RESULTS FOR: {}'.format(our_file))
+print('='*50)
+print('DIVERSITY METRICS:')
+print('  - Diversity Score: {:.4f}'.format(diversity))
 cumulative_stats['name'] = our_file
 cumulative_stats['rep-2'] = rep_2
 cumulative_stats['rep-3'] = rep_3
@@ -248,7 +261,10 @@ if mauve:
     out = mauve.compute_mauve(p_text=ref_list, q_text=pred_list, device_id=0, max_text_length=256, 
         verbose=False, featurize_model_name='gpt2')
     # print(out)
-    print(out.mauve) # prints 0.9917, 
+    # modification 4: for better visualization
+    # print(out.mauve) # prints 0.9917, 
+    print('\nMAUVE METRICS:')
+    print('  - MAUVE Score: {:.4f}'.format(out.mauve))
     cumulative_stats['mauve'] = out.mauve
     
 
@@ -267,7 +283,11 @@ if coherence:
     similarities = np.array(similarities)
     coherence_score = similarities.trace() / len(similarities) 
     cumulative_stats['coherence'] = coherence_score
-    print(round(coherence_score, 2))
+    # modification 5: for better visualization
+    # print(round(coherence_score, 2))
+    print('\nCOHERENCE METRICS:')
+    print('  - Coherence Score: {:.4f}'.format(coherence_score))
+
     # for (pp,yy) in sent_lst:
     #     similarities = model.similarity([pp], [yy])
     #     full_sim_lst.append(similarities[0][0])
@@ -410,7 +430,18 @@ if ppl:
     ppl = np.e ** score_lst.mean()
     cumulative_stats['ppl'] = ppl.item()
 
-print(cumulative_stats)
+# modification 6: for better visualization
+# print(cumulative_stats)
+print('\n' + '='*50)
+print('SUMMARY OF METRICS:')
+print('='*50)
+print('  - Diversity: {:.2f}'.format(cumulative_stats['diversity']))
+if 'mauve' in cumulative_stats:
+    print('  - MAUVE: {:.2f}'.format(cumulative_stats['mauve']))
+if 'coherence' in cumulative_stats:
+    print('  - Coherence: {:.2f}'.format(cumulative_stats['coherence']))
+print('='*50 + '\n')
+
 str_head = ''
 str_ = ''
 for k, v in cumulative_stats.items():
