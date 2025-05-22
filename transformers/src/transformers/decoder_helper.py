@@ -41,13 +41,20 @@ def post_process_reweight(  input_ids, next_indices, next_tokens, next_token_sco
 
     # print(next_token_scores.shape, student_scores.shape, )
 
-    # core logic of constrastive decoding
+    # # core logic of constrastive decoding
     # # here is one of the baselines
     # next_token_scores = next_token_scores + model_kwargs['st_coef'] * student_scores
+
+    # # here is one of the baselines
+    # next_token_scores = torch.exp(next_token_scores)
+    # student_scores = torch.exp(student_scores)
+    # next_token_scores = next_token_scores + model_kwargs['st_coef'] * student_scores
+
     # here is our algo
     max_token_scores = next_token_scores.max(dim=1, keepdim=True).values
     max_student_scores = student_scores.max(dim=1, keepdim=True).values
     next_token_scores = sigmoid(next_token_scores - max_token_scores) + model_kwargs['st_coef'] * sigmoid(student_scores - max_student_scores)
+
     # # here is the original implemenation
     # next_token_scores = next_token_scores - model_kwargs['st_coef'] * student_scores
 

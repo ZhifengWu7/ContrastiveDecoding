@@ -1,4 +1,4 @@
-# python text-generation/eval_script.py outputs/wikitext_gpt2-1.0_xl_256.jsonl
+# python eval_script.py outputs/wikitext_gpt2-1.0_xl_256.jsonl
 
 # parse the generated results into a list of text
 from dis import disco
