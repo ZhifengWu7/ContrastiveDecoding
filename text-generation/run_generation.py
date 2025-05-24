@@ -16,12 +16,15 @@
 # limitations under the License.
 """ Conditional text generation with the auto-regressive models of the library (GPT/GPT-2/CTRL/Transformer-XL/XLNet)
 """
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no --enable_sigmoid_contrast
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
+# python -m debugpy --listen 0.0.0.0:5678 --wait-for-client run_generation_copy.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> A version of Sonic the Hedgehog was developed by Ancient and released in 1991" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no --enable_sigmoid_contrast
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> what is machine learning?" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt "<|endoftext|> introduce the environmental impact of AI" --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/temp_out.json --ignore_prefix no
 
 # # Wikitext数据集
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file wikitext --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/wikitext_gpt2-1.0_xl_256.jsonl --ignore_prefix yes
+# python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file wikitext --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/wikitext_gpt2-1.0_xl_256.jsonl --ignore_prefix yes --enable_sigmoid_contrast
 
 # # Wikinews数据集
 # python run_generation.py --model_name_or_path gpt2-xl --model_type gpt2 --length 256 --prompt_file /private/home/xlisali/decoding/webscrape/wikinews_text.jsonl --student_name_or_path gpt2 --st_coef 1.0 --student_temperature 0.5 --outfile outputs/wikinews_gpt2-1.0_xl_256.jsonl --ignore_prefix yes
@@ -47,6 +50,7 @@ from collections import Counter
 import os
 import warnings, time, sys
 from tqdm import tqdm
+import tempfile
 
 warnings.filterwarnings('ignore')
 warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set.')
@@ -488,13 +492,97 @@ def get_args():
         action="store_true",
         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit",
     )
+    parser.add_argument("--enable_sigmoid_contrast", action="store_true", 
+                       help="启用三次运行对比解码模式")
     args = parser.parse_args()
-
+    
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
     args.n_gpu = 0 if args.no_cuda else torch.cuda.device_count()
     return args 
 
+def save_score_to_file(score, score_name):
+    """将分数保存到临时文件"""
+    temp_dir = tempfile.gettempdir()
+    score_file = os.path.join(temp_dir, f"{score_name}.json")
+    with open(score_file, 'w') as f:
+        json.dump({"score": score}, f)
+    print(f"保存 {score_name}: {score} 到 {score_file}")
+
+def load_score_from_file(score_name):
+    """从临时文件加载分数"""
+    temp_dir = tempfile.gettempdir()
+    score_file = os.path.join(temp_dir, f"{score_name}.json")
+    try:
+        with open(score_file, 'r') as f:
+            data = json.load(f)
+        score = data["score"]
+        print(f"加载 {score_name}: {score} 从 {score_file}")
+        return score
+    except FileNotFoundError:
+        print(f"未找到分数文件: {score_file}")
+        return 0.0
+
+def cleanup_score_files():
+    """清理之前的分数文件，确保每次三次运行都是从头开始"""
+    temp_dir = tempfile.gettempdir()
+    for score_name in ["score1", "score2"]:
+        score_file = os.path.join(temp_dir, f"{score_name}.json")
+        if os.path.exists(score_file):
+            os.remove(score_file)
+            print(f"清理旧的分数文件: {score_file}")
+
 def main(args):
+    # 清理之前的分数文件
+    cleanup_score_files()
+    if args.enable_sigmoid_contrast:
+        print("启用三次运行sigmoid对比解码模式...")
+
+        # 保存原始参数
+        original_teacher = args.model_name_or_path
+        original_student = args.student_name_or_path
+        original_st_coef = args.st_coef
+        original_outfile = args.outfile
+        
+        # 第一次运行：teacher=gpt2-xl, student=gpt2, st_coef=0.0
+        print("\n=== 第一次运行：收集teacher模型best_score ===")
+        args.model_name_or_path = original_teacher
+        args.student_name_or_path = original_student
+        args.st_coef = 0.0
+        args.outfile = original_outfile.replace('.json', '_run1.json')
+        args.num_beam = 5
+        
+        generation_lst_1 = run_single_generation(args)
+        print("第一次运行完成，score1已保存")
+        
+        # 第二次运行：teacher=gpt2, student=gpt2-xl, st_coef=0.0
+        print("\n=== 第二次运行：收集student模型best_score ===")
+        args.model_name_or_path = original_student  # 交换
+        args.student_name_or_path = original_teacher  # 交换
+        args.st_coef = 0.0
+        args.outfile = original_outfile.replace('.json', '_run2.json')
+        args.num_beam = 5
+        
+        generation_lst_2 = run_single_generation(args)
+        print("第二次运行完成，score2已保存")
+        
+        # 第三次运行：使用新的对比公式
+        print("\n=== 第三次运行：使用sigmoid对比解码 ===")
+        args.model_name_or_path = original_teacher  # 恢复原始
+        args.student_name_or_path = original_student  # 恢复原始
+        args.st_coef = original_st_coef  # 恢复原始
+        args.outfile = original_outfile  # 恢复原始输出文件
+        args.use_sigmoid_contrast = True  # 标记使用新公式
+        
+        generation_lst_3 = run_single_generation(args)
+        print("第三次运行完成")
+        
+        print(f"\n三次运行全部完成！最终结果保存在: {original_outfile}")
+        return generation_lst_3
+    else:
+        # 正常单次运行
+        return run_single_generation(args)
+
+def run_single_generation(args):
     logger.warning(f"device: {args.device}, n_gpu: {args.n_gpu}, 16-bits training: {args.fp16}")
 
     set_seed(args)
@@ -615,6 +703,11 @@ def main(args):
     if args.do_sample != 'contrastive_search_baseline':
         args.length = adjust_length_to_model(args.length, max_sequence_length=model.config.max_position_embeddings)
     logger.info(args)
+
+    # 添加sigma对比解码标记
+    if getattr(args, 'use_sigmoid_contrast', False):
+        model.use_sigmoid_contrast = True
+        print("标记模型使用sigmoid对比解码")
 
     # handling prompt
     if not args.prompt_file:
@@ -1049,28 +1142,32 @@ def main(args):
 
         generated_sequences = []
 
-        for generated_sequence_idx, generated_sequence in enumerate(output_sequences):
-            if iidx < 10:
-                print(f"=== GENERATED SEQUENCE {generated_sequence_idx + 1} ===")
-            generated_sequence = generated_sequence.tolist()
+        is_collecting_scores = (args.outfile.endswith('_run1.json') or 
+                       args.outfile.endswith('_run2.json'))
+        
+        if not is_collecting_scores: 
+            for generated_sequence_idx, generated_sequence in enumerate(output_sequences):
+                if iidx < 10:
+                    print(f"=== GENERATED SEQUENCE {generated_sequence_idx + 1} ===")
+                generated_sequence = generated_sequence.tolist()
 
-            # Decode text
-            # print(tokenizer.batch_decode(generated_sequence))
-            text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
+                # Decode text
+                # print(tokenizer.batch_decode(generated_sequence))
+                text = tokenizer.decode(generated_sequence, clean_up_tokenization_spaces=True)
 
-            # Remove all text after the stop token
-            text = text[: text.find(args.stop_token) if args.stop_token else None]
+                # Remove all text after the stop token
+                text = text[: text.find(args.stop_token) if args.stop_token else None]
 
-            # Add the prompt at the beginning of the sequence. Remove the excess text that was used for pre-processing
-            total_sequence = (
-                prompt_text + text[len(tokenizer.decode(encoded_prompt[0], clean_up_tokenization_spaces=True)) :]
-            )
+                # Add the prompt at the beginning of the sequence. Remove the excess text that was used for pre-processing
+                total_sequence = (
+                    prompt_text + text[len(tokenizer.decode(encoded_prompt[0], clean_up_tokenization_spaces=True)) :]
+                )
 
-            generated_dict = format_out(total_sequence, prompt_text, generated_sequence, gold_ref=ref_lst[iidx][1])
-            generated_sequences.append(generated_dict)
-            if iidx < 10:
-                print(total_sequence)
-            # print(generated_dict)
+                generated_dict = format_out(total_sequence, prompt_text, generated_sequence, gold_ref=ref_lst[iidx][1])
+                generated_sequences.append(generated_dict)
+                if iidx < 10:
+                    print(total_sequence)
+                # print(generated_dict)
 
 
         generation_lst.append(generated_sequences)
